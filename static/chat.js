@@ -1,7 +1,7 @@
 let conversationId = null;
 let currentContext = {};
 
-function add(role, text, result = null, reasoning = null) {
+function add(role, text, results = null, reasoning = null) {
   const chat = document.getElementById("chat");
   const messageDiv = document.createElement("div");
   messageDiv.className = `message ${role}`;
@@ -16,7 +16,7 @@ function add(role, text, result = null, reasoning = null) {
   content.innerText = text;
   messageDiv.appendChild(content);
   
-  // Add reasoning if present (for debugging/transparency)
+  // Add reasoning if present
   if (reasoning) {
     const reasoningDiv = document.createElement("div");
     reasoningDiv.className = "reasoning";
@@ -24,26 +24,75 @@ function add(role, text, result = null, reasoning = null) {
     content.appendChild(reasoningDiv);
   }
   
-  // Add result if present
-  if (result) {
-    const resultDiv = document.createElement("div");
-    resultDiv.className = "result-box";
-    
-    if (Array.isArray(result)) {
-      resultDiv.innerHTML = result.map(item => 
-        typeof item === 'object' 
-          ? `<div>${JSON.stringify(item, null, 2)}</div>` 
-          : `<div>${item}</div>`
-      ).join('<br>');
-    } else {
-      resultDiv.innerText = JSON.stringify(result, null, 2);
-    }
-    
-    content.appendChild(resultDiv);
+  // Add results if present (MULTIPLE TOOL RESULTS)
+  if (results && results.length > 0) {
+    results.forEach(result => {
+      const resultSection = document.createElement("div");
+      resultSection.className = "result-section";
+      
+      // Tool header
+      const toolHeader = document.createElement("div");
+      toolHeader.className = "tool-header";
+      toolHeader.innerHTML = `<strong>🔧 ${result.tool}</strong>`;
+      if (result.message) {
+        toolHeader.innerHTML += ` - ${result.message}`;
+      }
+      resultSection.appendChild(toolHeader);
+      
+      // Tool data
+      if (result.error) {
+        const errorDiv = document.createElement("div");
+        errorDiv.className = "error-box";
+        errorDiv.innerText = `Error: ${result.error}`;
+        resultSection.appendChild(errorDiv);
+      } else if (result.data) {
+        const dataDiv = document.createElement("div");
+        dataDiv.className = "result-box";
+        
+        if (Array.isArray(result.data)) {
+          // Format array of objects nicely
+          dataDiv.innerHTML = result.data.map(item => {
+            if (typeof item === 'object') {
+              return `<div class="result-item">${formatObject(item)}</div>`;
+            }
+            return `<div class="result-item">${item}</div>`;
+          }).join('');
+        } else {
+          dataDiv.innerText = JSON.stringify(result.data, null, 2);
+        }
+        
+        resultSection.appendChild(dataDiv);
+      }
+      
+      content.appendChild(resultSection);
+    });
   }
   
   chat.appendChild(messageDiv);
   chat.scrollTop = chat.scrollHeight;
+}
+
+function formatObject(obj) {
+  // Pretty format objects (flights, hotels, restaurants)
+  if (obj.airline) {
+    // Flight
+    let route = '';
+    if (obj.from && obj.to) {
+      route = `${obj.from} → ${obj.to} | `;
+    }
+    return `<strong>${obj.airline}</strong> - ${route}₹${obj.price} | ${obj.stops} stop(s) | ${obj.duration || ''}`;
+  } else if (obj.name && obj.price_per_night) {
+    // Hotel
+    return `<strong>${obj.name}</strong> - ₹${obj.price_per_night}/night | ⭐ ${obj.rating || 'N/A'}`;
+  } else if (obj.name && obj.cuisine) {
+    // Restaurant
+    return `<strong>${obj.name}</strong> - ${obj.cuisine} | ${obj.price_range || ''} | ⭐ ${obj.rating || ''}`;
+  } else {
+    // Generic object
+    return Object.entries(obj)
+      .map(([key, val]) => `${key}: ${val}`)
+      .join(' | ');
+  }
 }
 
 async function send() {
@@ -53,7 +102,7 @@ async function send() {
   
   if (!message) return;
   
-  // Disable input while processing
+  // Disable input
   input.disabled = true;
   sendBtn.disabled = true;
   sendBtn.innerHTML = '<span class="loading"></span>';
@@ -80,10 +129,10 @@ async function send() {
     currentContext = data.context;
     
     const reply = data.reply.message;
-    const result = data.reply.result;
+    const results = data.reply.results;  // Array of tool results
     const reasoning = data.reply.reasoning;
     
-    add("agent", reply, result, reasoning);
+    add("agent", reply, results, reasoning);
     
   } catch (error) {
     add("agent", `Sorry, I encountered an error: ${error.message}`);
@@ -110,7 +159,7 @@ function hideContext() {
   modal.style.display = "none";
 }
 
-// Initialize with a greeting
+// Initialize
 window.addEventListener('load', () => {
   add("agent", "Hello! I'm your travel planning assistant. I can help you find flights, hotels, and restaurant recommendations. Where would you like to go?");
 });

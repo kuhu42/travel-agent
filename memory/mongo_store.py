@@ -13,6 +13,7 @@ def start_conversation():
         "conversation_id": convo_id,
         "created_at": datetime.utcnow(),
         "context": {
+            "source": None,  # NEW: Departure city
             "destination": None,
             "dates": None,
             "budget": None,
@@ -27,12 +28,19 @@ def get_context(convo_id):
     convo = conversations.find_one({"conversation_id": convo_id})
     if not convo:
         return {
+            "source": None,
             "destination": None,
             "dates": None,
             "budget": None,
             "preferences": {}
         }
-    return convo["context"]
+    
+    # Add source if missing (for old conversations)
+    context = convo["context"]
+    if "source" not in context:
+        context["source"] = None
+    
+    return context
 
 def get_full_conversation(convo_id):
     """Get the entire conversation including history."""

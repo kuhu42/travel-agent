@@ -5,3 +5,9 @@ pymongo
 python-dotenv
 requests
 pyyaml
+
+# Langfuse for observability
+langfuse>=2.0.0
+
+# Optional: For ultra-fast responses
+groq>=0.4.0
