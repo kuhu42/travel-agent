@@ -1,15 +1,13 @@
 """
-Langfuse configuration and initialization.
-Uses the modern context manager API.
+Simplified Langfuse configuration with context managers.
 """
 
 import os
+from contextlib import contextmanager
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
-# Check if Langfuse is configured
 LANGFUSE_ENABLED = bool(
     os.getenv("LANGFUSE_PUBLIC_KEY") and 
     os.getenv("LANGFUSE_SECRET_KEY")
@@ -17,113 +15,81 @@ LANGFUSE_ENABLED = bool(
 
 if LANGFUSE_ENABLED:
     try:
-        from langfuse import get_client
+        from langfuse import Langfuse
         
-        # Initialize Langfuse client using get_client()
-        langfuse = get_client()
+        langfuse = Langfuse(
+            public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+            secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+            host=os.getenv("LANGFUSE_HOST", "https://cloud.langfuse.com")
+        )
         
         print("✅ Langfuse logging enabled")
-        print(f"   Host: {os.getenv('LANGFUSE_HOST', os.getenv('LANGFUSE_BASE_URL', 'https://cloud.langfuse.com'))}")
         
-    except ImportError as e:
-        print(f"⚠️  Langfuse import error: {e}")
-        print(f"   Install with: pip install 'langfuse>=2.0.0'")
-        LANGFUSE_ENABLED = False
-        langfuse = None
-        
-    except Exception as e:
-        print(f"⚠️  Langfuse initialization error: {e}")
-        print(f"   Check your API keys in .env")
+    except ImportError:
+        print("⚠️  Langfuse package not installed")
         LANGFUSE_ENABLED = False
         langfuse = None
         
 else:
-    print("⚠️  Langfuse not configured - logging disabled")
-    print("   Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY in .env")
+    print("⚠️  Langfuse not configured")
     langfuse = None
 
 
-def get_langfuse_client():
-    """Get Langfuse client instance."""
-    return langfuse if LANGFUSE_ENABLED else None
-
-
-class NoOpSpan:
-    """Dummy span when Langfuse is disabled."""
-    def __enter__(self):
-        return self
+# Context managers for easy usage
+@contextmanager
+def create_span(name, input=None, metadata=None):
+    """Context manager for creating spans."""
+    class DummySpan:
+        def update(self, **kwargs):
+            pass
     
-    def __exit__(self, *args):
-        pass
-    
-    def update(self, **kwargs):
-        pass
-    
-    def generation(self, **kwargs):
-        return NoOpSpan()
-    
-    def span(self, **kwargs):
-        return NoOpSpan()
-    
-    def event(self, **kwargs):
-        pass
-
-
-def create_span(name: str, **kwargs):
-    """
-    Create a Langfuse span using context manager.
-    Returns a no-op span if Langfuse is disabled.
-    
-    Usage:
-        with create_span("my-operation") as span:
-            # Your code here
-            span.update(output="result")
-    """
     if LANGFUSE_ENABLED and langfuse:
-        return langfuse.start_as_current_observation(
-            as_type="span",
-            name=name,
-            **kwargs
-        )
+        try:
+            span = langfuse.span(name=name, input=input, metadata=metadata)
+            yield span
+            span.end()
+        except:
+            yield DummySpan()
     else:
-        return NoOpSpan()
+        yield DummySpan()
 
 
-def create_generation(name: str, model: str = None, **kwargs):
-    """
-    Create a Langfuse generation (for LLM calls) using context manager.
-    Returns a no-op span if Langfuse is disabled.
+@contextmanager
+def create_generation(name, model=None, input=None, metadata=None):
+    """Context manager for creating generations."""
+    class DummyGeneration:
+        def update(self, **kwargs):
+            pass
     
-    Usage:
-        with create_generation("llm-call", model="llama3.2:3b") as gen:
-            # Your LLM call
-            gen.update(
-                input="prompt",
-                output="response",
-                usage={"tokens": 100}
+    if LANGFUSE_ENABLED and langfuse:
+        try:
+            gen = langfuse.generation(
+                name=name,
+                model=model,
+                input=input,
+                metadata=metadata
             )
-    """
-    if LANGFUSE_ENABLED and langfuse:
-        kwargs_with_model = {"as_type": "generation", "name": name, **kwargs}
-        if model:
-            kwargs_with_model["model"] = model
-        return langfuse.start_as_current_observation(**kwargs_with_model)
+            yield gen
+            gen.end()
+        except:
+            yield DummyGeneration()
     else:
-        return NoOpSpan()
+        yield DummyGeneration()
 
 
 def flush():
-    """Flush events to Langfuse. Call at the end of your application."""
+    """Flush pending events."""
     if LANGFUSE_ENABLED and langfuse:
-        langfuse.flush()
+        try:
+            langfuse.flush()
+        except:
+            pass
 
 
 __all__ = [
-    'langfuse',
     'LANGFUSE_ENABLED',
-    'get_langfuse_client',
+    'langfuse',
     'create_span',
     'create_generation',
-    'flush',
-    'NoOpSpan'
+    'flush'
 ]

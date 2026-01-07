@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SSE Test Page</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    
+    h1 {
+      color: #4ec9b0;
+    }
+    
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      margin: 10px 5px;
+      border-radius: 4px;
+    }
+    
+    button:hover {
+      background: #1177bb;
+    }
+    
+    #log {
+      background: #252526;
+      padding: 15px;
+      border-radius: 5px;
+      height: 500px;
+      overflow-y: auto;
+      margin-top: 20px;
+      border: 1px solid #3e3e42;
+    }
+    
+    .log-entry {
+      margin: 5px 0;
+      padding: 5px;
+      border-left: 3px solid #007acc;
+      padding-left: 10px;
+    }
+    
+    .log-entry.event {
+      border-left-color: #4ec9b0;
+    }
+    
+    .log-entry.error {
+      border-left-color: #f48771;
+      color: #f48771;
+    }
+    
+    .log-entry.success {
+      border-left-color: #89d185;
+      color: #89d185;
+    }
+    
+    input {
+      padding: 8px;
+      width: 400px;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      color: #d4d4d4;
+      border-radius: 4px;
+    }
+    
+    .status {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+    
+    .status.connected {
+      background: #89d185;
+      color: #1e1e1e;
+    }
+    
+    .status.disconnected {
+      background: #f48771;
+      color: #1e1e1e;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔬 SSE Debug Test Page</h1>
+  
+  <div>
+    <input type="text" id="messageInput" value="I want to travel to Paris" placeholder="Enter test message">
+    <button onclick="testSSE()">Test SSE Stream</button>
+    <button onclick="testRegular()">Test Regular API</button>
+    <button onclick="clearLog()">Clear Log</button>
+    <span id="status" class="status disconnected">Not Connected</span>
+  </div>
+  
+  <div id="log"></div>
+  
+  <script>
+    let eventCount = 0;
+    
+    function log(message, type = 'info') {
+      eventCount++;
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.innerHTML = `<strong>[${new Date().toLocaleTimeString()}]</strong> ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+    
+    function setStatus(connected) {
+      const status = document.getElementById('status');
+      if (connected) {
+        status.className = 'status connected';
+        status.textContent = 'Connected';
+      } else {
+        status.className = 'status disconnected';
+        status.textContent = 'Disconnected';
+      }
+    }
+    
+    async function testSSE() {
+      const message = document.getElementById('messageInput').value;
+      log(`🚀 Starting SSE test with message: "${message}"`, 'info');
+      
+      eventCount = 0;
+      
+      try {
+        log('📡 Fetching /chat/stream...', 'info');
+        
+        const response = await fetch('/chat/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+          },
+          body: JSON.stringify({
+            message: message,
+            conversation_id: null
+          })
+        });
+        
+        log(`✅ Response received - Status: ${response.status}`, 'success');
+        log(`📋 Content-Type: ${response.headers.get('content-type')}`, 'info');
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        if (!response.body) {
+          throw new Error('Response body is null');
+        }
+        
+        setStatus(true);
+        log('🔄 Reading stream...', 'info');
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let events = 0;
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            log(`✅ Stream complete! Received ${events} events`, 'success');
+            setStatus(false);
+            break;
+          }
+          
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              events++;
+              const data = line.slice(6);
+              
+              try {
+                const parsed = JSON.parse(data);
+                log(`📨 Event #${events}: <strong>${parsed.type}</strong> - ${JSON.stringify(parsed).substring(0, 100)}...`, 'event');
+              } catch (e) {
+                log(`⚠️  Failed to parse: ${data}`, 'error');
+              }
+            }
+          }
+        }
+        
+      } catch (error) {
+        log(`❌ Error: ${error.message}`, 'error');
+        setStatus(false);
+        console.error(error);
+      }
+    }
+    
+    async function testRegular() {
+      const message = document.getElementById('messageInput').value;
+      log(`🔵 Testing regular API with: "${message}"`, 'info');
+      
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            message: message,
+            conversation_id: null
+          })
+        });
+        
+        const data = await response.json();
+        log(`✅ Regular API response: ${JSON.stringify(data, null, 2)}`, 'success');
+        
+      } catch (error) {
+        log(`❌ Regular API error: ${error.message}`, 'error');
+      }
+    }
+    
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+      log('🧹 Log cleared', 'info');
+    }
+    
+    // Log initial state
+    log('🎬 SSE Test Page loaded and ready', 'success');
+    log('💡 Click "Test SSE Stream" to start', 'info');
+  </script>
+</body>
+</html>
