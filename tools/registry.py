@@ -1,6 +1,8 @@
-from tools.flight_tool import search_flights
-from tools.food_tool import recommend_food
-from tools.hotel_tool import search_hotels
+"""
+Tool registry - now uses database-backed tools instead of hardcoded data.
+"""
+
+from tools.db_tools import search_flights, search_hotels, recommend_food
 
 TOOL_REGISTRY = {
     "search_flights": search_flights,
